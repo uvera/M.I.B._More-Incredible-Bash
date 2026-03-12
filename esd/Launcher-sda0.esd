@@ -571,6 +571,36 @@ keyValue
 
 ###########################################################################################
 #
+# Main -> M.I.B. -> CarPlay -> AndroidAuto Dev
+#
+###########################################################################################
+screen aa_devmode carplay_activation
+
+keyValue
+    value   String sys 0x00000000 0
+	label 	"Android Auto development mode"
+	poll    0
+
+keyValue
+    value   String sys 0x00000000 0
+	label 	"Turn this on to use custom AA apps on your phone"
+	poll    0
+
+script
+	value   sys 1 0x0100 "/net/mmx/fs/sda0/esd/scripts/aadev_on.sh"
+	label   "Enable developer mode"
+
+script
+	value   sys 1 0x0100 "/net/mmx/fs/sda0/esd/scripts/aadev_off.sh"
+	label   "Restore original settings"
+
+keyValue
+    value   String sys 0x00000000 0
+	label	"___________________________________________________________________________"
+	poll    0
+
+###########################################################################################
+#
 # Main -> M.I.B. -> VIM
 #
 ###########################################################################################

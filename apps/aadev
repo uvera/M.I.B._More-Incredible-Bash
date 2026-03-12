@@ -1,0 +1,149 @@
+#!/bin/sh
+
+# Code from https://github.com/jilleb/mib2-toolbox/blob/master/Toolbox/scripts/patch_gal.sh
+revision="aadev v0.1.0 (2025-10-13 Speeder)"
+# use --help for more info
+
+export PATH=:/proc/boot:/sbin:/bin:/usr/bin:/usr/sbin:/net/mmx/bin:/net/mmx/usr/bin:/net/mmx/usr/sbin:/net/mmx/sbin:/net/mmx/mnt/app/armle/bin:/net/mmx/mnt/app/armle/sbin:/net/mmx/mnt/app/armle/usr/bin:/net/mmx/mnt/app/armle/usr/sbin
+export LD_LIBRARY_PATH=/net/mmx/mnt/app/root/lib-target:/net/mmx/mnt/eso/lib:/net/mmx/eso/lib:/net/mmx/mnt/app/usr/lib:/net/mmx/mnt/app/armle/lib:/net/mmx/mnt/app/armle/lib/dll:/net/mmx/mnt/app/armle/usr/lib
+export SDCARD_PATH=/net/mmx/fs/sda0/
+
+thisname="$(basename $0)"
+thisdir="$(dirname $0)"
+
+if [ -z $LOG ]; then
+	. $thisdir/../config/GLOBALS
+	mount -uw $SDCARD_PATH
+	echo -ne "\n$ME-$thisname---->\n" >> $LOG
+	mount -ur $SDCARD_PATH
+fi
+
+if [ -f $TMP/backup.mib ] || [ -f $TMP/reboot.mib ] || [ -f $TMP/flash.mib ]; then
+	echo "Backup or reboot is already running..."
+	return 2> /dev/null
+fi
+
+export MOUNTPOINT=/net/mmx/mnt/system
+export CONFIGPATH=$MOUNTPOINT/etc/eso/production/gal.json
+
+
+case $1 in
+
+-on) {
+
+trap '' 2
+
+	echo -ne "Enabling Android Auto Developer Settings\n"
+	sleep 2
+
+	mount -uw $SDCARD_PATH
+
+	if [ -f $CONFIGPATH ]; then
+		if [ -f $CONFIGPATH.bak ]; then
+			echo -ne "Android Auto config already patched. Aborting\n" | $TEE -a $LOG
+		else
+			echo -ne "Starting patch process\n"
+			mount -uw $MOUNTPOINT
+			cp $CONFIGPATH $CONFIGPATH.bak 2>> $LOG
+			if [ -f $CONFIGPATH.bak ]; then
+				echo -ne "Patching Car identity\n"
+				sed -i 's/\[brand\]/Google/g' $CONFIGPATH
+				sed -i 's/\[car_class\]/Desktop Head Unit/g' $CONFIGPATH
+				sed -i 's/\[car_generation\]//g' $CONFIGPATH
+				sed -i 's/\[car_derivate\]//g' $CONFIGPATH
+				sed -i 's/ (\[hmi_variant\])//g' $CONFIGPATH
+				sed -i 's/\[branch\]_\[region\]/2015/g' $CONFIGPATH
+				sed -i 's/\[car_id\]/0001/g' $CONFIGPATH
+				sleep .5
+				
+				echo -ne "Patching Headunit information\n"
+				sed -i 's/\[first_tier_supplier\]\|HARMAN/Google/g' $CONFIGPATH
+				sed -i 's/\[project_id\]/Desktop Head Unit/g' $CONFIGPATH
+				sed -i 's/\[train_version\]/2015-09-16-2258745/g' $CONFIGPATH
+				sed -i 's/\[sw_version\]\|DEV_MMX2_PAG_[A-Z]\+_[A-Z][0-9]\+_[0-9]\+PROD/1.0-windows/g' $CONFIGPATH   
+				sleep .5
+
+				mount -ur $MOUNTPOINT
+				echo -ne "Finished patching Android Auto devmode\n"
+				echo -ne "Unplug and replug your phone to restart AA.\n"
+			else
+				mount -ur $MOUNTPOINT
+				echo -ne "Failed to backup original config. Aborting\n" | $TEE -a $LOG
+			fi
+		fi
+	else
+		echo -ne "No Android Auto config found on this machine. Aborting\n" | $TEE -a $LOG
+	fi
+
+	mount -ur $SDCARD_PATH
+
+trap 2
+
+return 2> /dev/null
+
+};;
+
+
+-off) {
+
+trap '' 2
+
+	mount -uw $SDCARD_PATH
+
+	echo -ne "Restoring Android Auto config to default\n"
+	if [ -f $CONFIGPATH.bak ]; then
+		echo -ne "Starting to restore the AA dev patch\n"
+		mount -uw $MOUNTPOINT
+		rm -f $CONFIGPATH 2>> $LOG
+		mv $CONFIGPATH.bak $CONFIGPATH 2>> $LOG
+		mount -ur $MOUNTPOINT
+		echo -ne "Restoring finished :)\n"
+		echo -ne "Unplug and replug your phone to restart AA.\n"
+	else
+		echo -ne "Android Auto config backups not found. Not restoring\n" | $TEE -a $LOG
+	fi
+
+	mount -ur $SDCARD_PATH
+
+trap 2
+
+return 2> /dev/null
+
+};;
+
+# help or unknown parameter ------------------------------
+	*) {
+		echo ""
+		echo $revision
+		echo ""
+		echo "Usage: "$thisname" [OPTION1] [-noboot]"
+		echo ""
+		echo "Option 1:"
+		echo "        -on 		patch AndroidAuto for devmode"
+		echo "        -off 		restore original AndroidAuto config"
+		echo "        --help		show this help"
+		echo ""
+		echo "Option 2:"
+		echo "        -noboot	no reboot triggered by script"
+		echo ""
+		echo "This program is free software; you can redistribute it and/or"
+		echo "modify it under the terms of the GNU General Public License"
+		echo "as published by the Free Software Foundation; either version 2"
+		echo "of the License, or (at your option) any later version."
+		echo ""
+		echo "This program is distributed in the hope that it will be useful,"
+		echo "but WITHOUT ANY WARRANTY; without even the implied warranty of"
+		echo "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
+		echo "See the GNU General Public License for more details."
+		echo ""
+		echo "You should have received a copy of the GNU General Public License"
+		echo "along with this program; if not, write to the Free Software Foundation,"
+		echo "Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA."
+		echo ""
+		
+	};;
+	
+	esac
+
+exit 0
+
