@@ -1119,6 +1119,41 @@ keyValue
 
 ###########################################################################################
 #
+# Main -> M.I.B. -> NAVIGATION -> Sport HMI (classpath)
+#
+###########################################################################################
+screen SportHmiMIB navigation
+
+keyValue
+    value   String sys 0x00000000 0
+    label   "Sport Display / Sport HMI: LSD bootclasspath patch (CarFuncAdapImpl)"
+    poll    0
+
+keyValue
+    value   String sys 0x00000000 0
+    label   "SD card: mod/java/SportHmiMIB.jar — see mod/java/sport_hmi/TARGETS.txt"
+    poll    0
+
+script
+    value   sys 1 0x0100 "/net/mmx/fs/sda0/esd/scripts/SportHmiMIB_on.sh"
+    label   "Install Sport HMI patch"
+
+script
+    value   sys 1 0x0100 "/net/mmx/fs/sda0/esd/scripts/SportHmiMIB_off.sh"
+    label   "Remove Sport HMI patch"
+
+keyValue
+    value   String sys 0x00000000 0
+    label   "Unit will reboot after install or remove"
+    poll    0
+
+keyValue
+    value   String sys 0x00000000 0
+    label   "___________________________________________________________________________"
+    poll    0
+
+###########################################################################################
+#
 # Main -> M.I.B. -> NAVIGATION -> NAVIGATION STATUS
 #
 ###########################################################################################

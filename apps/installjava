@@ -1,6 +1,6 @@
 #!/bin/sh
 
-revision="installjava v0.3.8 (2026-04-02 MIB-Wiki)"
+revision="installjava v0.3.10 (2026-04-02 MIB-Wiki)"
 # use --help for more info
 
 export PATH=:/proc/boot:/sbin:/bin:/usr/bin:/usr/sbin:/net/mmx/bin:/net/mmx/usr/bin:/net/mmx/usr/sbin:/net/mmx/sbin:/net/mmx/mnt/app/armle/bin:/net/mmx/mnt/app/armle/sbin:/net/mmx/mnt/app/armle/usr/bin:/net/mmx/mnt/app/armle/usr/sbin
@@ -31,6 +31,89 @@ LSD=/net/mmx/mnt/app/eso/hmi/lsd/lsd.sh
 BU=/net/mmx/mnt/app/eso/hmi/lsd/lsd.sh.bu
 
 mount -uw /net/mmx/mnt/app
+
+# Used by -sporthmion: prepend SportHmiMIB.jar (after NavActiveIgnore when present).
+# AU57x: same BOOTCLASSPATH colon-append pattern as NavActiveIgnore (insert jar lines before lsd.jxe).
+# Note: lsd.sh lines look like ...NavActiveIgnore.jar"  — do not use /NavActiveIgnore\.jar$/ (EOL is after the quote).
+patch_lsd_sport_hmi() {
+	if grep -q "SportHmiMIB.jar" "${LSD}" 2>/dev/null; then
+		echo "lsd.sh already references SportHmiMIB.jar" | $TEE -a $LOG
+		return 0
+	fi
+	if [[ "$TRAINVERSION" = *AU57x* ]]; then
+		if grep -q "NavActiveIgnore.jar" "${LSD}" 2>/dev/null; then
+			if [ ! -e $BU ]; then
+				echo "Backup lsd.sh" | $TEE -a $LOG
+				cp -v $LSD $BU 2>> $LOG
+			fi
+			echo "Patching lsd.sh for AU57x SportHmiMIB (after NavActiveIgnore)" | $TEE -a $LOG
+			cp -r $LSD $BACKUPFOLDER/$MUVERSION-lsd.sh 2>> $LOG
+			$SED -ir '/NavActiveIgnore\.jar/a\
+BOOTCLASSPATH="$BOOTCLASSPATH:/eso/hmi/lsd/jars/SportHmiMIB.jar"' $LSD 2>> $LOG
+			return 0
+		fi
+		if ! grep -Fq 'BOOTCLASSPATH="$BOOTCLASSPATH:$LSD_DIR/lsd.jxe"' ${LSD}; then
+			echo "AU57x: lsd.sh anchor not found; SportHmiMIB bootclasspath line not added" | $TEE -a $LOG
+			return 1
+		fi
+		if [ ! -e $BU ]; then
+			echo "Backup lsd.sh" | $TEE -a $LOG
+			cp -v $LSD $BU 2>> $LOG
+		fi
+		echo "Patching lsd.sh for AU57x SportHmiMIB" | $TEE -a $LOG
+		cp -r $LSD $BACKUPFOLDER/$MUVERSION-lsd.sh 2>> $LOG
+		$SED -ir 's,^BOOTCLASSPATH="\$BOOTCLASSPATH:\$LSD_DIR/lsd.jxe",# M.I.B. SportHmiMIB AU57x\nBOOTCLASSPATH="\$BOOTCLASSPATH:/eso/hmi/lsd/jars/SportHmiMIB.jar"\nBOOTCLASSPATH="\$BOOTCLASSPATH:\$LSD_DIR/lsd.jxe",g' $LSD 2>> $LOG
+		return 0
+	fi
+	if [[ "$TRAINVERSION" = *POG* ]] || ([[ "$TRAINVERSION" = *AU* ]] && [[ "$TRAINVERSION" != *AU57x* ]]) || [[ "$TRAINVERSION" = *BY* ]]; then
+		if grep -q "NavActiveIgnore.jar" "${LSD}" 2>/dev/null; then
+			if [ ! -e $BU ]; then
+				cp -v $LSD $BU 2>> $LOG
+			fi
+			echo "Patching lsd.sh for SportHmiMIB (-Xbootclasspath/p after NavActiveIgnore)" | $TEE -a $LOG
+			cp -r $LSD $BACKUPFOLDER/$MUVERSION-lsd.sh 2>> $LOG
+			$SED -ir '/NavActiveIgnore\.jar/a\
+BOOTCLASSPATH="$BOOTCLASSPATH -Xbootclasspath/p:$BASE_DIR/lsd/jars/SportHmiMIB.jar"' $LSD 2>> $LOG
+			return 0
+		fi
+		if ! grep -q "^\$J9" ${LSD} 2>/dev/null; then
+			echo "lsd.sh: \$J9 anchor not found for SportHmiMIB" | $TEE -a $LOG
+			return 1
+		fi
+		if [ ! -e $BU ]; then
+			cp -v $LSD $BU 2>> $LOG
+		fi
+		echo "Patching lsd.sh for SportHmiMIB (-Xbootclasspath/p before \$J9)" | $TEE -a $LOG
+		cp -r $LSD $BACKUPFOLDER/$MUVERSION-lsd.sh 2>> $LOG
+		$SED -ir 's,^$J9,BOOTCLASSPATH="$BOOTCLASSPATH -Xbootclasspath/p:$BASE_DIR/lsd/jars/SportHmiMIB.jar"\n$J9,g' $LSD 2>> $LOG
+		return 0
+	fi
+	if [[ "$TRAINVERSION" = *VW* ]] || [[ "$TRAINVERSION" = *SKG1* ]] || [[ "$TRAINVERSION" = *SEG1* ]]; then
+		if grep -q "NavActiveIgnore.jar" "${LSD}" 2>/dev/null; then
+			if [ ! -e $BU ]; then
+				cp -v $LSD $BU 2>> $LOG
+			fi
+			echo "Patching lsd.sh (VW) for SportHmiMIB after NavActiveIgnore" | $TEE -a $LOG
+			cp -r $LSD $BACKUPFOLDER/$MUVERSION-lsd.sh 2>> $LOG
+			$SED -ir '/NavActiveIgnore\.jar/a\
+BOOTCLASSPATH="$BOOTCLASSPATH -Xbootclasspath/p:$BASE_DIR/lsd/jars/SportHmiMIB.jar"' $LSD 2>> $LOG
+			return 0
+		fi
+		if ! grep -q "^\$J9" ${LSD} 2>/dev/null; then
+			echo "lsd.sh: \$J9 anchor not found (VW)" | $TEE -a $LOG
+			return 1
+		fi
+		if [ ! -e $BU ]; then
+			cp -v $LSD $BU 2>> $LOG
+		fi
+		echo "Patching lsd.sh (VW) for SportHmiMIB before \$J9" | $TEE -a $LOG
+		cp -r $LSD $BACKUPFOLDER/$MUVERSION-lsd.sh 2>> $LOG
+		$SED -ir 's,^$J9,#Append SportHmiMIB\nBOOTCLASSPATH="$BOOTCLASSPATH -Xbootclasspath/p:$BASE_DIR/lsd/jars/SportHmiMIB.jar"\n$J9,g' $LSD 2>> $LOG
+		return 0
+	fi
+	echo "SportHmiMIB: no lsd.sh patch rule for this train; copy JAR only" | $TEE -a $LOG
+	return 0
+}
 
 if [[ "$TRAINVERSION" = *AU57x* ]]; then
 	if grep -q "M.I.B. NavActiveIgnore AU57x" ${LSD}; then
@@ -162,6 +245,59 @@ return 2> /dev/null
 
 };;
 
+-sporthmion) {
+
+SPORTJAR="SportHmiMIB.jar"
+
+trap '' 2
+
+echo -ne "-- Install Sport HMI classpath patch (CarFuncAdapImpl)\n" | $TEE -a $LOG
+echo -ne "See mod/java/sport_hmi/ON_UNIT.md and TARGETS.txt; MIB-Helper Sport HMI wiki.\n" | $TEE -a $LOG
+
+if [[ "$TRAINVERSION" = *AU57x* ]] || [[ "$TRAINVERSION" = *POG* ]] || [[ "$TRAINVERSION" = *AU* ]] || [[ "$TRAINVERSION" = *BY* ]] || [[ "$TRAINVERSION" = *VW* ]] || [[ "$TRAINVERSION" = *SKG1* ]] || [[ "$TRAINVERSION" = *SEG1* ]]; then
+	if [ ! -f "$VOLUME/mod/java/SportHmiMIB.jar" ]; then
+		echo -ne "SportHmiMIB.jar missing on SD (expected: mod/java/SportHmiMIB.jar)\n" | $TEE -a $LOG
+		trap 2
+		return 2> /dev/null
+	fi
+	patch_lsd_sport_hmi
+	if [ -f $APP$SPORTJAR ]; then
+		echo -ne "$SPORTJAR already on unit; updating from SD\n" | $TEE -a $LOG
+	fi
+	cp -r $VOLUME/mod/java/SportHmiMIB.jar $APP$SPORTJAR 2>> $LOG
+	echo -ne "SportHmiMIB.jar installed.\nUnit will reboot now\n" | $TEE -a $LOG
+	[ -z "$noboot" ] && . $thisdir/reboot -t 10
+else
+	echo -ne "SportHmiMIB: train not in supported list (try Audi / VW / SKG / SEG / BY / POG).\n" | $TEE -a $LOG
+fi
+
+trap 2
+
+return 2> /dev/null
+
+};;
+
+-sporthmioff) {
+
+SPORTJAR="SportHmiMIB.jar"
+
+trap '' 2
+
+echo -ne "-- Remove SportHmiMIB\n" | $TEE -a $LOG
+if [ -f $APP$SPORTJAR ]; then
+	rm -rf $APP$SPORTJAR 2>> $LOG
+	echo "SportHmiMIB.jar removed\nEdit lsd.sh manually if boot fails (remove SportHmiMIB line).\nUnit will reboot now\n" | $TEE -a $LOG
+	[ -z "$noboot" ] && . $thisdir/reboot -t 10
+else
+	echo -ne "SportHmiMIB.jar not found on unit\n" | $TEE -a $LOG
+fi
+
+trap 2
+
+return 2> /dev/null
+
+};;
+
 -g24full) {
 
 JAR="g24fullscreen.jar"
@@ -262,6 +398,8 @@ return 2> /dev/null
 		echo "Options:"
 		echo "        -navignoreon 		enable navignore"
 		echo "        -navignoreoff 		remove navignore"
+		echo "        -sporthmion 		install Sport HMI classpath patch (Audi/VW...)"
+		echo "        -sporthmioff 		remove SportHmiMIB.jar"
 		echo "        -g24full 		install G24 fullscreen patch"
 		echo "        -g24wide 		install G24 widescreen patch"
 		echo "        -g24rm 			remove G24 patch"

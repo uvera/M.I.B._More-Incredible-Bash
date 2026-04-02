@@ -1,0 +1,15 @@
+# Local copies of firmware artifacts (keep out of git; use sync_lsd_from_backup.sh in mib2-android-auto-vc)
+lsd.jar
+lsd.jxe
+# Reference patch from SD / community (compare against this)
+navignore_audi.jar
+navignore_vw.jar
+# Build output
+build/
+jdk/
+decompiled/
+decompiled-stock/
+reports/
+*.class
+# Fetched on first build (see build_navignore_au57x.sh)
+tools/ecj-*.jar

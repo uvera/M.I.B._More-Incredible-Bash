@@ -1,0 +1,144 @@
+Sport HMI classpath inject — train-specific targets (MIB2 Audi LSD)
+====================================================================
+
+Discovery (mib2-android-auto-vc/lsd.jar, non–AU57x-high train sample)
+---------------------------------------------------------------------
+- Car function constant: de.audi.atip.sysapp.carcoding.CarFuncAdap.CAR_FUNCTION_SPORT_HMI
+  (UTF-8 string "CAR_FUNCTION_SPORT_HMI" appears only in CarFuncAdap.class in this jar.)
+- Coding adapter: de.audi.atip.sysapp.CarFuncAdapImpl
+  - Maps only a subset of (short)->MenuCtrl flag indices in ctor.
+  - For unmapped shorts, getByteCoding() returns 0 → isMenuDisplayActivated() is false.
+- Consumer: de.audi.app.car.sdis.base.SDISBase.updateVisibility(CarViewOption, short)
+  - If !codingAdapter.isMenuDisplayActivated(s) (and s != 128), returns 0 (hidden).
+
+Chosen hooks (classpath SportHmiMIB.jar)
+----------------------------------------
+1) OVERRIDE: de.audi.atip.sysapp.CarFuncAdapImpl
+   - Sport HMI (52): menu display / clamp / standstill / getByteCoding as before (TARGETS history).
+
+2) OVERRIDE: de.audi.app.car.sdis.base.ViewOptionMapper
+   - Stock getVisibilityState(CarViewOption, short) does getByteCoding(s) then
+     isMenuDisplayActivated((short)thatByte). For s==52, CarFuncAdapImpl returns getByteCoding==1,
+     so stock calls isMenuDisplayActivated(1) and hides. M.I.B. bypasses that for 52 and uses the
+     same mapping as the single-arg getVisibilityState(CarViewOption).
+
+3) OVERRIDE: de.audi.app.car.sdis.comp.CarDrivingCharacteristicsComponent (+ inner CarStateHandler)
+   - CODING byte[] is stock {40,21,17} plus 52 (CAR_FUNCTION_SPORT_HMI) so
+     AbstractCarStateHandler.registerCarStates runs for Sport (clamp / speed / standstill
+     paths that call updateMenuEntryVisibility(52, …)).
+   - Inner handler extends updates to include 52; no ASIHMISyncCarDriving “sport visibility”
+     method exists on this train’s jar — case 52 does not call toSDIS (unlike 40/21/17).
+
+LSH / “isComponentAvailable”
+----------------------------
+- This lsd.jar has no UTF-8 symbol isComponentAvailable; MER menu construction may still live
+  partly in other bundles (e.g. LSH.jxe). The above is the in-lsd SDIS + visibility stack for
+  car function 52.
+
+Not implemented (higher risk / needs more RE on your train)
+-------------------------------------------------------------
+- MER setState workarounds for SPORT_TORQUE_MAX / SPORT_OIL_TEMPERATURE when DSI omits data.
+- Fake DSI / gateway dataset — out of scope for this JAR; see wiki “Modifications with custom data”.
+
+DSI / adaptation limits (from wiki + code path above)
+------------------------------------------------------
+- This JAR only forces coding-side “menu display activated” for the Sport HMI function id.
+- Gauges may stay empty or INVISIBLE if BC/DSI does not supply maxTorque, oil temp, etc.
+- Enable adaptation FEC/SWaP + channel 52 ([LO]_menu_display_SportHMI) in parallel where applicable.
+  See: https://wiki.mib-helper.com/index.php?title=SPORT_HMI_for_Audi
+  and SPORT HMI Performance Monitor adaptation section.
+
+Build note (jxe2jar classpath)
+------------------------------
+Some trains' lsd.jar may omit de.audi.atip.utils.generics.GMap.class. The M.I.B. override uses
+java.util.Hashtable for the private map (same put/get/containsKey usage). If your stock jar
+contains GMap and you prefer bytecode closer to stock, switch the field type back to GMap and
+use Generics.newHashMap() once GMap is on the compile classpath.
+
+MU1425 MHI2_ER_AU57x (this repo layout)
+---------------------------------------
+- Put **MU1425-lsd.jxe** in:
+  `backup_extract/MU1425-MHI2_ER_AU57x_K3663_1-JTB-07426.01.1511710535/MU1425-lsd.jxe`
+  (file is usually **not** in git; copy from your unit/backup.)
+- `mib2-android-auto-vc/sync_mu1425_au57x_lsd.sh` → copies to `mib2-android-auto-vc/lsd.jxe` and rebuilds **`mib2-android-auto-vc/lsd.jar`** via Docker **jxe2jar**.
+- See the same folder’s **README_LSD_JXE.txt** for copy-paste commands.
+
+Re-run discovery on YOUR lsd.jar
+--------------------------------
+  python3 mod/java/sport_hmi/tools/discover_sport_hmi.py /path/to/lsd.jar
+  mod/java/sport_hmi/tools/scan_sdis_coding_arrays.sh /path/to/lsd.jar
+
+If CarFuncAdapImpl or package names differ, adjust sources and rebuild.
+
+NavActiveIgnore works — classpath is fine; why Sport can still do nothing (investigation)
+---------------------------------------------------------------------------------------
+Nav and Sport are **different hooks**:
+
+| Patch        | Replaced class (typical)              | What actually runs |
+|-------------|----------------------------------------|--------------------|
+| NavIgnore   | de.audi.app...AndroidAuto2NavHandler   | Android Auto / nav focus handling whenever AA is used |
+| SportHmiMIB | de.audi.atip.sysapp.CarFuncAdapImpl      | Coding adapter used by SDIS / menu-coding paths that pass **car function id** (e.g. 52) |
+
+So **Nav proving the JAR loads does not prove Sport’s logic path is exercised.** Nav can work while Sport never calls `updateVisibility(..., 52)` or never registers car function 52 in SDIS.
+
+**Hard evidence (mib2-android-auto-vc/lsd.jar):** `AbstractCarStateHandler.registerCarStates(byte[])`
+is driven by each component’s static **`CODING`** array. In this jar, **`bipush 52` never appears as a
+`CODING` entry** (the bytes written with `bastore` into the small `newarray byte` in `<clinit>`):
+
+- `CarDrivingCharacteristicsComponent`: **40, 21, 17** (3 entries only)
+- `CarComfortComponent`: **11**
+- `CarVehicleStateComponent`: **18, 32, 19, 53**
+- `CarAirConditionComponent`: **8**
+
+So on this LSD slice, **no SDIS `*Component` registers car function 52** for clamp/speed/standstill
+visibility updates. A `CarFuncAdapImpl` override cannot affect a code path that **never passes 52**
+into `registerCarStates` / `updateVisibility` from those handlers.
+
+**What to do on your MU firmware**
+
+1. Run `scan_sdis_coding_arrays.sh` on **your** full `lsd.jar` from the same build as `lsd.jxe`.
+2. If **52** still never appears in any component `CODING` byte array, the Sport menu is **not**
+   driven through those SDIS registration lists — look in **full LSD / LSH / Evo** for
+   `SportComponent*`, `addCarComponent`, or `isComponentAvailable` with adaptation **52** (wiki).
+3. Keep **App.Car.MER=5**: if `CAR_FUNC_SPORT` never appears under `CAR_MAIN`, the blocker is
+   **menu construction**, not `CarFuncAdapImpl`.
+
+Why the CAR menu can still show no Sport after the patch
+---------------------------------------------------------
+1) Override not actually loaded
+   - On the unit: /eso/hmi/lsd/lsd.sh must reference SportHmiMIB.jar and the file must exist under
+     /eso/hmi/lsd/jars/ (same pattern as NavActiveIgnore on AU57x: extra BOOTCLASSPATH lines inserted
+     before the lsd.jxe segment so the jar appears earlier in the colon list than lsd.jxe).
+   - Reboot after installjava; a broken lsd.sh line can prevent LSD start.
+
+lsd.sh / J9 — investigation note (do not conflate with Sport-only hacks)
+------------------------------------------------------------------------
+- **M.I.B. NavActiveIgnore on AU57x** uses colon-append BOOTCLASSPATH lines, not a separate
+  `-Xbootclasspath/p` flag. SportHmiMIB intentionally mirrors that. Treat
+  `MHI2_firmware/lsd.carplay-bootclasspath.example` as an optional CarPlay/G24 lab recipe, not as
+  the contract for Nav/Sport M.I.B. patches.
+- Stock AU57x ends with `j9 ... -Xbootclasspath:$BOOTCLASSPATH -jxe:.../lsd.jxe`. How J9 resolves
+  classes between `-Xbootclasspath:` entries and `-jxe` is VM-specific; if NavIgnore works on the
+  same unit with the same style of patch, the classpath wiring is probably fine and “no Sport
+  menu” points to **HMI registration** (LSH / Evo / isComponentAvailable) or **train bytecode**, not
+  a Sport-only bootclasspath variant.
+
+2) Train / bytecode mismatch
+   - The JAR must be compiled against YOUR MU* lsd.jar from the same firmware as lsd.jxe.
+   - If packages are obfuscated or CarFuncAdapImpl is renamed, bootclasspath will not replace the
+     class the unit loads — patch is a no-op.
+
+3) This JAR only adjusts CarFuncAdapImpl (coding / SDIS visibility for function id 52)
+   - Full Audi HMI often adds Sport from LSH / Car EVO code (e.g. SportComponentEvo) behind
+     isComponentAvailable(52, …) or similar. That logic may live in another bundle (e.g. LSH.jxe),
+     not in the subset checked into mib2-android-auto-vc/lsd.jar.
+   - If Sport UI is never instantiated, changing CarFuncAdapImpl cannot create a menu entry.
+
+4) MER / DSI (wiki)
+   - Enable logging: App.Car.MER=5, App.Car.Sport=5. If CAR_FUNC_SPORT never appears under
+     CAR_MAIN, the blocker is above the coding adapter. If it appears but stays hidden, DSI /
+     ViewOption state may still force INVISIBLE.
+
+5) Standstill flag mistake (fixed in source)
+   - isMenuDisStandstillActivated must be false for Sport HMI: true makes isStandstillSensitive
+     true in AbstractCarStateHandler and can keep the entry tied to standstill / hidden when moving.
